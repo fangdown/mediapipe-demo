@@ -4,8 +4,7 @@
       <video ref="videoElement" class="video" autoplay playsinline muted></video>
       <canvas ref="canvasElement" class="canvas"></canvas>
 
-      <div v-if="!cameraEnabled && !isInitializing" class="loading">
-        <div class="spinner"></div>
+      <div v-if="!cameraEnabled && !isInitializing" class="hint">
         <p>点击开启摄像头</p>
       </div>
 
@@ -40,7 +39,7 @@
           :class="{ active: selectedBg === bg.id }"
           @click="selectBackground(bg.id)"
         >
-          <div class="bg-preview" :style="bg.type === 'image' ? { backgroundImage: `url(${bg.preview})`, backgroundSize: 'cover' } : { background: bg.preview }"></div>
+          <div class="bg-preview" :style="bg.type === 'image' ? { backgroundImage: `url(${bg.url})`, backgroundSize: 'cover' } : { background: bg.preview }"></div>
           <span class="bg-name">{{ bg.name }}</span>
         </button>
       </div>
@@ -64,6 +63,10 @@ let stream = null
 let animationId = null
 let selfieSegmentation = null
 let isPageVisible = true
+let frameCount = 0
+let lastResult = null // Cache last result for frame skipping
+let lastCanvasTime = 0
+const FRAME_SKIP_INTERVAL = 1 // Process every 2nd frame
 
 const backgrounds = [
   { id: 'none', name: '原图', preview: 'linear-gradient(135deg, #374151, #4b5563)' },
@@ -127,8 +130,8 @@ const initMediaPipe = async () => {
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
     })
 
-    selfieSegmentation.setOptions({
-      modelSelection: 1,
+selfieSegmentation.setOptions({
+      modelSelection: 0, // 0 = general model (faster), 1 = landscape model
       selfieMode: false
     })
 
@@ -178,7 +181,15 @@ const drawBackground = (ctx, width, height) => {
 }
 
 const onResults = (results) => {
+  // Cache result for frame skipping
+  lastResult = results
+  renderFrame(results)
+}
+
+const renderFrame = (results) => {
   const canvas = canvasElement.value
+  if (!canvas) return
+
   const ctx = canvas.getContext('2d')
 
   canvas.width = videoElement.value.videoWidth
@@ -212,7 +223,18 @@ const processFrame = async () => {
   }
 
   if (selfieSegmentation && videoElement.value && videoElement.value.readyState >= 2) {
-    await selfieSegmentation.send({ image: videoElement.value })
+    frameCount++
+
+    // Skip every other frame to reduce GPU/CPU load
+    if (frameCount % (FRAME_SKIP_INTERVAL + 1) === 0) {
+      // Use cached result to render this frame
+      if (lastResult && canvasElement.value) {
+        renderFrame(lastResult)
+      }
+    } else {
+      // Send frame to MediaPipe for processing
+      await selfieSegmentation.send({ image: videoElement.value })
+    }
   }
 
   // Only continue if camera is still enabled
@@ -251,6 +273,8 @@ const toggleCamera = async () => {
 
     cameraEnabled.value = false
     isInitialized.value = false
+    frameCount = 0
+    lastResult = null
     return
   }
 
@@ -268,8 +292,8 @@ const toggleCamera = async () => {
 
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
+        width: { ideal: 640 },
+        height: { ideal: 480 },
         facingMode: 'user'
       }
     })
@@ -280,6 +304,8 @@ const toggleCamera = async () => {
     cameraEnabled.value = true
     isInitializing.value = false
     isInitialized.value = true
+    frameCount = 0
+    lastResult = null
 
     animationId = requestAnimationFrame(processFrame)
   } catch (e) {
@@ -339,6 +365,10 @@ onUnmounted(() => {
     delete backgroundImages[key]
   }
 
+  // Clear frame cache
+  frameCount = 0
+  lastResult = null
+
   // Remove event listeners
   document.removeEventListener('visibilitychange', handleVisibilityChange)
   window.removeEventListener('resize', handleResize)
@@ -384,7 +414,8 @@ onUnmounted(() => {
 }
 
 .loading,
-.error {
+.error,
+.hint {
   position: absolute;
   top: 50%;
   left: 50%;
