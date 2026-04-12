@@ -14,6 +14,7 @@
 - **样式**: SCSS
 - **核心库**:
   - `@mediapipe/selfie_segmentation` - 人像分割
+  - `@mediapipe/face_mesh` - 面部特征点检测（用于腮红效果）
   - `@mediapipe/drawing_utils` - 绘制工具
   - `@mediapipe/control_utils` - 控制面板
 
@@ -25,6 +26,8 @@
 3. **人像分割** - MediaPipe Selfie Segmentation 实时识别人物轮廓
 4. **背景替换** - 将识别出的人物叠加到自定义背景上
 5. **背景选择器** - 提供预设背景图片供用户选择
+6. **腮红效果** - MediaPipe FaceMesh 检测面部特征点，在脸颊区域叠加自然红晕
+7. **腮红强度控制** - 滑块调节腮红强度（10-100）
 
 ### 背景选项
 - 原图（无背景替换）
@@ -48,7 +51,8 @@
 ### 交互状态
 - **初始状态**: 仅显示文字提示"点击开启摄像头"，无加载动画
 - **初始化中**: 显示 spinner 加载动画 + "正在初始化摄像头..." 文字
-- **运行中**: 实时视频画面 + 底部背景选择器
+- **运行中**: 实时视频画面 + 底部背景选择器 + 腮红开关
+- **腮红开启时**: 显示强度滑块（10-100）
 - **错误状态**: 红色错误提示 + 重试按钮
 
 ### 配色方案
@@ -95,6 +99,8 @@
 1. 使用原生 `navigator.mediaDevices.getUserMedia` 获取摄像头视频流
 2. 通过 `requestAnimationFrame` 循环处理帧，实现跳帧控制
 3. Selfie Segmentation 逐帧分析图像，输出人物 mask
-4. 使用 Canvas 2D `globalCompositeOperation` 进行图像合成
-5. 根据 mask 将人物叠加到背景上
-6. 输出最终处理后的画面
+4. Face Mesh 同时处理同一帧，输出 468 个面部特征点
+5. 使用 Canvas 2D `globalCompositeOperation` 进行图像合成
+6. 根据 mask 将人物叠加到背景上
+7. 在人像上叠加腮红效果（多点 radial gradient + soft-light 混合）
+8. 输出最终处理后的画面
