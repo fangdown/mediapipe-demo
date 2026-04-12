@@ -29,6 +29,24 @@
           <span class="toggle-icon">{{ cameraEnabled ? '⏸' : '▶' }}</span>
           <span>{{ cameraEnabled ? '关闭' : '开启' }}摄像头</span>
         </button>
+
+        <button
+          class="toggle-btn blush-btn"
+          :class="{ active: blushEnabled }"
+          @click="blushEnabled = !blushEnabled"
+        >
+          <span>腮红 {{ blushEnabled ? 'ON' : 'OFF' }}</span>
+        </button>
+
+        <div v-if="blushEnabled" class="blush-intensity">
+          <input
+            type="range"
+            min="10"
+            max="100"
+            v-model="blushIntensity"
+            class="intensity-slider"
+          />
+        </div>
       </div>
 
       <div class="background-selector">
@@ -50,6 +68,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
 import { SelfieSegmentation } from '@mediapipe/selfie_segmentation'
+import { FaceMesh } from '@mediapipe/face_mesh'
 
 const videoElement = ref(null)
 const canvasElement = ref(null)
@@ -67,6 +86,10 @@ let frameCount = 0
 let lastResult = null // Cache last result for frame skipping
 let lastCanvasTime = 0
 const FRAME_SKIP_INTERVAL = 1 // Process every 2nd frame
+let faceMesh = null
+let faceLandmarks = null // Cache last face landmarks for blush
+const blushEnabled = ref(false)
+const blushIntensity = ref(60) // 0-100
 
 const backgrounds = [
   { id: 'none', name: '原图', preview: 'linear-gradient(135deg, #374151, #4b5563)' },
@@ -118,6 +141,43 @@ const disposeMediaPipe = () => {
       console.warn('MediaPipe close error:', e)
     }
     selfieSegmentation = null
+  }
+}
+
+const disposeFaceMesh = () => {
+  if (faceMesh) {
+    try {
+      faceMesh.close()
+    } catch (e) {
+      console.warn('FaceMesh close error:', e)
+    }
+    faceMesh = null
+  }
+}
+
+const initFaceMesh = async () => {
+  disposeFaceMesh()
+
+  try {
+    faceMesh = new FaceMesh({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
+    })
+
+    faceMesh.setOptions({
+      maxNumFaces: 1,
+      refineLandmarks: true
+    })
+
+    faceMesh.onResults(onFaceMeshResults)
+    await faceMesh.initialize()
+  } catch (e) {
+    console.warn('FaceMesh init error:', e)
+  }
+}
+
+const onFaceMeshResults = (results) => {
+  if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+    faceLandmarks = results.multiFaceLandmarks[0]
   }
 }
 
@@ -180,6 +240,45 @@ const drawBackground = (ctx, width, height) => {
   }
 }
 
+const drawBlush = (ctx, landmarks, width, height) => {
+  if (!blushEnabled.value || !landmarks) return
+
+  // Left cheek landmarks 187, 123; right cheek landmarks 411, 347
+  const leftCheekPoints = [landmarks[187], landmarks[123], landmarks[50]]
+  const rightCheekPoints = [landmarks[411], landmarks[347], landmarks[280]]
+
+  const scale = blushIntensity.value / 100
+
+  // Helper to draw blush over multiple points for broader coverage
+  const drawCheekBlush = (points) => {
+    if (!points.every(p => p)) return
+
+    // Draw multiple overlapping gradients for natural spread
+    points.forEach((point, i) => {
+      const cx = point.x * width
+      const cy = point.y * height
+      // Vary size based on which point
+      const radius = Math.min(width, height) * (0.04 + i * 0.015)
+
+      // More red, natural blush color
+      const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius)
+      gradient.addColorStop(0, `rgba(255, 100, 100, ${0.35 * scale})`)
+      gradient.addColorStop(0.5, `rgba(255, 120, 120, ${0.2 * scale})`)
+      gradient.addColorStop(1, 'rgba(255, 130, 130, 0)')
+
+      // Use soft-light for more natural color blending
+      ctx.globalCompositeOperation = 'soft-light'
+      ctx.fillStyle = gradient
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, radius * 1.2, radius * 0.8, 0, 0, Math.PI * 2)
+      ctx.fill()
+    })
+  }
+
+  drawCheekBlush(leftCheekPoints)
+  drawCheekBlush(rightCheekPoints)
+}
+
 const onResults = (results) => {
   // Cache result for frame skipping
   lastResult = results
@@ -212,6 +311,11 @@ const renderFrame = (results) => {
     ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height)
   }
 
+  // Draw blush effect on top of the person
+  if (faceLandmarks) {
+    drawBlush(ctx, faceLandmarks, canvas.width, canvas.height)
+  }
+
   ctx.restore()
 }
 
@@ -234,6 +338,10 @@ const processFrame = async () => {
     } else {
       // Send frame to MediaPipe for processing
       await selfieSegmentation.send({ image: videoElement.value })
+      // Also send to FaceMesh for facial landmarks
+      if (faceMesh) {
+        await faceMesh.send({ image: videoElement.value })
+      }
     }
   }
 
@@ -255,6 +363,8 @@ const toggleCamera = async () => {
 
     // Dispose MediaPipe before stopping stream
     disposeMediaPipe()
+    disposeFaceMesh()
+    faceLandmarks = null
 
     // Stop all tracks
     if (stream) {
@@ -289,6 +399,7 @@ const toggleCamera = async () => {
 
   try {
     await initMediaPipe()
+    await initFaceMesh()
 
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
@@ -368,6 +479,10 @@ onUnmounted(() => {
   // Clear frame cache
   frameCount = 0
   lastResult = null
+
+  // Dispose FaceMesh
+  disposeFaceMesh()
+  faceLandmarks = null
 
   // Remove event listeners
   document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -506,6 +621,49 @@ onUnmounted(() => {
 
 .toggle-icon {
   font-size: 0.9rem;
+}
+
+.blush-btn {
+  &.active {
+    background: #ec4899;
+
+    &:hover {
+      background: #db2777;
+    }
+  }
+}
+
+.blush-intensity {
+  display: flex;
+  align-items: center;
+  margin-left: 0.5rem;
+}
+
+.intensity-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  background: #475569;
+  border-radius: 2px;
+  outline: none;
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    background: #ec4899;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  &::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    background: #ec4899;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
 }
 
 .background-selector {
