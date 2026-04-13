@@ -72,9 +72,11 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { SelfieSegmentation } from '@mediapipe/selfie_segmentation'
-import { FaceMesh } from '@mediapipe/face_mesh'
 import regl from 'regl'
+
+// MediaPipe 从全局获取（通过 CDN 加载）
+const SelfieSegmentation = window.SelfieSegmentation
+const FaceMesh = window.FaceMesh
 
 // WebGL 腮红渲染器 (基于 regl)
 class WebGLBlushRenderer {
