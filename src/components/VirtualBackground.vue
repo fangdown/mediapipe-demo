@@ -22,31 +22,17 @@
 
     <div class="controls">
       <div class="camera-toggle">
-        <button
-          class="toggle-btn"
-          :class="{ active: cameraEnabled }"
-          @click="toggleCamera"
-        >
+        <button class="toggle-btn" :class="{ active: cameraEnabled }" @click="toggleCamera">
           <span class="toggle-icon">{{ cameraEnabled ? '⏸' : '▶' }}</span>
           <span>{{ cameraEnabled ? '关闭' : '开启' }}摄像头</span>
         </button>
 
-        <button
-          class="toggle-btn blush-btn"
-          :class="{ active: blushEnabled }"
-          @click="blushEnabled = !blushEnabled"
-        >
+        <button class="toggle-btn blush-btn" :class="{ active: blushEnabled }" @click="blushEnabled = !blushEnabled">
           <span>腮红 {{ blushEnabled ? 'ON' : 'OFF' }}</span>
         </button>
 
         <div v-if="blushEnabled" class="blush-intensity">
-          <input
-            type="range"
-            min="10"
-            max="100"
-            v-model="blushIntensity"
-            class="intensity-slider"
-          />
+          <input type="range" min="10" max="100" v-model="blushIntensity" class="intensity-slider" />
           <select v-model="blushRendererMode" class="renderer-select" @change="switchBlushRenderer(blushRendererMode)">
             <option value="canvas2d">Canvas2D</option>
             <option value="webgl" :disabled="!webglSupported">WebGL</option>
@@ -55,14 +41,11 @@
       </div>
 
       <div class="background-selector">
-        <button
-          v-for="bg in backgrounds"
-          :key="bg.id"
-          class="bg-option"
-          :class="{ active: selectedBg === bg.id }"
-          @click="selectBackground(bg.id)"
-        >
-          <div class="bg-preview" :style="bg.type === 'image' ? { backgroundImage: `url(${bg.url})`, backgroundSize: 'cover' } : { background: bg.preview }"></div>
+        <button v-for="bg in backgrounds" :key="bg.id" class="bg-option" :class="{ active: selectedBg === bg.id }"
+          @click="selectBackground(bg.id)">
+          <div class="bg-preview"
+            :style="bg.type === 'image' ? { backgroundImage: `url(${bg.url})`, backgroundSize: 'cover' } : { background: bg.preview }">
+          </div>
           <span class="bg-name">{{ bg.name }}</span>
         </button>
       </div>
@@ -259,7 +242,7 @@ const FRAME_SKIP_INTERVAL = 1 // Process every 2nd frame
 let faceMesh = null
 let faceLandmarks = null // Cache last face landmarks for blush
 const blushEnabled = ref(false)
-const blushIntensity = ref(60) // 0-100
+const blushIntensity = ref(20) // 0-100
 
 // 腮红渲染模式：'canvas2d' | 'webgl'
 const blushRendererMode = ref('webgl')
@@ -408,7 +391,7 @@ const initMediaPipe = async () => {
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
     })
 
-selfieSegmentation.setOptions({
+    selfieSegmentation.setOptions({
       modelSelection: 0, // 0 = general model (faster), 1 = landscape model
       selfieMode: false
     })
